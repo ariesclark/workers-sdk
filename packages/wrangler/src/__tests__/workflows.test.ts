@@ -19,6 +19,7 @@ import { runWrangler } from "./helpers/run-wrangler";
 import { writeWorkerSource } from "./helpers/write-worker-source";
 import type { Instance, Workflow } from "../workflows/types";
 import type { RawConfig } from "@cloudflare/workers-utils";
+import type { WorkflowBatchDeleteResult } from "@cloudflare/workflows-shared/src/types";
 import type { ExpectStatic } from "vitest";
 
 describe("wrangler workflows", () => {
@@ -199,6 +200,7 @@ describe("wrangler workflows", () => {
 				  wrangler workflows instances restart <name> <id>     Restart a workflow instance
 				  wrangler workflows instances pause <name> <id>       Pause a workflow instance
 				  wrangler workflows instances resume <name> <id>      Resume a workflow instance
+				  wrangler workflows instances delete <name> [id..]    Delete workflow instances
 
 				GLOBAL FLAGS
 				  -c, --config          Path to Wrangler configuration file  [string]
@@ -683,6 +685,97 @@ describe("wrangler workflows", () => {
 			);
 			expect(std.info).toMatchInlineSnapshot(
 				`"🥷 The instance "bar" from some-workflow was terminated successfully"`
+			);
+		});
+	});
+
+	describe("instances delete", () => {
+		const mockDeleteInstances = (
+			expect: ExpectStatic,
+			expectedIds: string[],
+			result: WorkflowBatchDeleteResult = {
+				deleted: expectedIds.map((id) => ({ id })),
+				errors: [],
+			}
+		) => {
+			msw.use(
+				http.post(
+					`*/accounts/:accountId/workflows/:workflowName/instances/batch/delete`,
+					async ({ request }) => {
+						expect(await request.json()).toEqual({ instances: expectedIds });
+						return HttpResponse.json({
+							success: true,
+							errors: [],
+							messages: [],
+							result,
+						});
+					},
+					{ once: true }
+				)
+			);
+		};
+
+		it("should delete multiple instances", async ({ expect }) => {
+			writeWranglerConfig();
+			mockDeleteInstances(expect, ["foo", "bar"]);
+
+			await runWrangler(`workflows instances delete some-workflow foo bar`);
+			expect(std.info).toMatchInlineSnapshot(
+				`"🗑️  Deleted workflow instances from "some-workflow": "foo", "bar""`
+			);
+		});
+
+		it("should report per-instance errors after logging deletions", async ({
+			expect,
+		}) => {
+			writeWranglerConfig();
+			mockDeleteInstances(expect, ["foo", "bar"], {
+				deleted: [{ id: "foo" }],
+				errors: [{ id: "bar", code: 500, message: "delete failed" }],
+			});
+
+			await expect(
+				runWrangler(`workflows instances delete some-workflow foo bar`)
+			).rejects.toThrow(
+				"Failed to delete 1 workflow instance(s):\n  - bar: delete failed"
+			);
+			expect(std.info).toContain('"foo"');
+		});
+
+		it("should read instance IDs from a file", async ({ expect }) => {
+			writeWranglerConfig();
+			fs.writeFileSync("instance-ids.txt", "foo\nbar\n");
+			mockDeleteInstances(expect, ["foo", "bar"]);
+
+			await runWrangler(
+				"workflows instances delete some-workflow --ids-file instance-ids.txt"
+			);
+			expect(std.info).toContain('"foo", "bar"');
+		});
+
+		it("should require at least one instance ID", async ({ expect }) => {
+			writeWranglerConfig();
+			await expect(
+				runWrangler("workflows instances delete some-workflow")
+			).rejects.toThrow("Provide at least one workflow instance ID");
+		});
+
+		it("should report an unreadable IDs file", async ({ expect }) => {
+			writeWranglerConfig();
+			await expect(
+				runWrangler(
+					"workflows instances delete some-workflow --ids-file missing.txt"
+				)
+			).rejects.toThrow('Could not read IDs file "missing.txt"');
+		});
+
+		it("should reject more than 100 instances", async ({ expect }) => {
+			writeWranglerConfig();
+			const ids = Array.from({ length: 101 }, (_, i) => `instance-${i}`);
+			await expect(
+				runWrangler(`workflows instances delete some-workflow ${ids.join(" ")}`)
+			).rejects.toThrow(
+				"You can delete at most 100 workflow instances at a time"
 			);
 		});
 	});
@@ -1805,6 +1898,123 @@ describe("wrangler workflows", () => {
 				expect(std.info).toMatchInlineSnapshot(
 					`"🥷 The instance "instance-123" from my-workflow was terminated successfully"`
 				);
+			});
+		});
+
+		describe("workflows instances delete --local", () => {
+			it("should delete multiple instances in local dev session", async ({
+				expect,
+			}) => {
+				writeWranglerConfig();
+				const ids = ["instance-123", "instance-456", "instance-123"];
+
+				msw.use(
+					http.post(
+						`${LOCAL_BASE}/workflows/:workflowName/instances/batch/delete`,
+						async ({ params, request }) => {
+							expect(params.workflowName).toEqual("my-workflow");
+							expect(await request.json()).toEqual({ instances: ids });
+							return HttpResponse.json({
+								success: true,
+								errors: [],
+								messages: [],
+								result: {
+									deleted: ids.map((id) => ({ id })),
+									errors: [],
+								},
+							});
+						}
+					)
+				);
+
+				await runWrangler(
+					"workflows instances delete my-workflow instance-123 instance-456 instance-123 --local"
+				);
+				expect(std.info).toMatchInlineSnapshot(
+					`"🗑️  Deleted workflow instances from "my-workflow": "instance-123", "instance-456", "instance-123""`
+				);
+			});
+
+			it("should report local per-instance errors", async ({ expect }) => {
+				writeWranglerConfig();
+
+				msw.use(
+					http.post(
+						`${LOCAL_BASE}/workflows/:workflowName/instances/batch/delete`,
+						() =>
+							HttpResponse.json({
+								success: true,
+								errors: [],
+								messages: [],
+								result: {
+									deleted: [],
+									errors: [
+										{
+											id: "missing-instance",
+											code: 10400,
+											message: "workflows.api.error.instance.not_found",
+										},
+										{
+											id: "broken-instance",
+											code: 10001,
+											message: "workflows.api.error.internal_server",
+										},
+									],
+								},
+							})
+					)
+				);
+
+				await expect(
+					runWrangler(
+						"workflows instances delete my-workflow missing-instance broken-instance --local"
+					)
+				).rejects.toThrow(
+					"Failed to delete 2 workflow instance(s):\n" +
+						"  - missing-instance: workflows.api.error.instance.not_found\n" +
+						"  - broken-instance: workflows.api.error.internal_server"
+				);
+			});
+
+			it("should resolve latest before local deletion", async ({ expect }) => {
+				writeWranglerConfig();
+				msw.use(
+					http.get(`${LOCAL_BASE}/workflows/:workflowName/instances`, () =>
+						HttpResponse.json({
+							success: true,
+							errors: [],
+							messages: [],
+							result: [
+								{
+									id: "newest-instance",
+									created_on: "2024-06-01T00:00:00Z",
+								},
+							],
+						})
+					),
+					http.post(
+						`${LOCAL_BASE}/workflows/:workflowName/instances/batch/delete`,
+						async ({ request }) => {
+							expect(await request.json()).toEqual({
+								instances: ["newest-instance"],
+							});
+							return HttpResponse.json({
+								success: true,
+								errors: [],
+								messages: [],
+								result: {
+									deleted: [{ id: "newest-instance" }],
+									errors: [],
+								},
+							});
+						}
+					)
+				);
+
+				await runWrangler(
+					"workflows instances delete my-workflow latest --local"
+				);
+				expect(std.info).toContain('"newest-instance"');
 			});
 		});
 

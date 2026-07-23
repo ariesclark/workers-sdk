@@ -5,6 +5,7 @@ import type {
 	InstanceStatusAndLogs,
 	WorkflowInstanceRestartFrom,
 } from "./types";
+import type { WorkflowBatchDeleteResult } from "@cloudflare/workflows-shared/src/types";
 
 const LOCAL_EXPLORER_BASE_PATH = "/cdn-cgi/explorer/api";
 const DEFAULT_LOCAL_PORT = 8787;
@@ -159,6 +160,22 @@ export async function updateLocalInstanceStatus(
 			method: "PATCH",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
+		}
+	);
+}
+
+export async function deleteLocalInstances(
+	port: number,
+	workflowName: string,
+	instanceIds: string[]
+): Promise<WorkflowBatchDeleteResult> {
+	return fetchLocalResult<WorkflowBatchDeleteResult>(
+		port,
+		`/workflows/${encodeURIComponent(workflowName)}/instances/batch/delete`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ instances: instanceIds }),
 		}
 	);
 }

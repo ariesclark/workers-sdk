@@ -7,6 +7,7 @@ import { errorResponse, wrapResponse } from "../common";
 import type { AppContext } from "../common";
 import type { Env } from "../explorer.worker";
 import type {
+	WorkflowsBatchDeleteInstancesData,
 	WorkflowsChangeInstanceStatusData,
 	WorkflowsWorkflow,
 } from "../generated";
@@ -15,6 +16,7 @@ import type {
 	RestartFromStep,
 	WorkflowInstanceTerminateOptions,
 } from "@cloudflare/workflows-shared/src/binding";
+import type { WorkflowBatchDeleteResult } from "@cloudflare/workflows-shared/src/types";
 import type { z } from "zod";
 
 // ============================================================================
@@ -31,6 +33,10 @@ interface DirectoryEntry {
 	name: string;
 	type: "file" | "directory";
 	birthtimeMs: number;
+}
+
+interface WorkflowWithBatchDelete extends Workflow {
+	deleteBatch(instanceIds: string[]): Promise<WorkflowBatchDeleteResult>;
 }
 
 /** Methods on a WorkflowInstance handle (from workflow.get()). */
@@ -176,12 +182,15 @@ function getEngineNamespace(
  * Get the Workflow proxy binding for a workflow.
  * Used for operations that go through the standard Workflow interface (create).
  */
-function getWorkflowBinding(env: Env, workflowName: string): Workflow | null {
+function getWorkflowBinding(
+	env: Env,
+	workflowName: string
+): WorkflowWithBatchDelete | null {
 	const info = env.LOCAL_EXPLORER_BINDING_MAP.workflows[workflowName];
 	if (!info) {
 		return null;
 	}
-	return env[info.binding] as Workflow;
+	return env[info.binding] as WorkflowWithBatchDelete;
 }
 
 function getLocalWorkflows(env: Env): WorkflowsWorkflow[] {
@@ -941,6 +950,51 @@ export async function changeWorkflowInstanceStatus(
 			);
 		}
 
+		return errorResponse(500, 10001, message);
+	}
+}
+
+/**
+ * Delete multiple workflow instances through the local Workflow binding.
+ */
+export async function deleteWorkflowInstances(
+	c: AppContext,
+	workflowName: string,
+	body: WorkflowsBatchDeleteInstancesData["body"]
+): Promise<Response> {
+	const workflow = getWorkflowBinding(c.env, workflowName);
+
+	if (!workflow) {
+		const ownerMiniflare = await findWorkflowOwner(c, workflowName);
+		if (ownerMiniflare) {
+			const response = await fetchFromPeer(
+				ownerMiniflare,
+				`/workflows/${encodeURIComponent(workflowName)}/instances/batch/delete`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				}
+			);
+			if (response) {
+				return response;
+			}
+		}
+
+		return errorResponse(
+			404,
+			WORKFLOW_ERROR_NOT_FOUND,
+			`Workflow '${workflowName}' not found.`
+		);
+	}
+
+	try {
+		const result = await workflow.deleteBatch(body.instances);
+		statusCountsCache.delete(workflowName);
+		return c.json(wrapResponse(result));
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : "Failed to delete instances";
 		return errorResponse(500, 10001, message);
 	}
 }

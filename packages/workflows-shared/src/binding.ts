@@ -1,8 +1,10 @@
 import { RpcTarget, WorkerEntrypoint } from "cloudflare:workers";
 import { InstanceEvent, instanceStatusName } from "./instance";
 import {
+	isUserTriggeredDelete,
 	isUserTriggeredPause,
 	isUserTriggeredRestart,
+	createWorkflowError,
 	isUserTriggeredTerminate,
 	WorkflowError,
 } from "./lib/errors";
@@ -16,10 +18,13 @@ import type {
 } from "./engine";
 import type { InstanceStatus as EngineInstanceStatus } from "./instance";
 import type {
+	WorkflowBatchDeleteResult,
 	WorkflowInstanceModifier,
 	WorkflowIntrospectionOperation,
 	WorkflowIntrospectionStreamResult,
 } from "./types";
+
+export type { WorkflowBatchDeleteResult } from "./types";
 
 type Env = {
 	ENGINE: DurableObjectNamespace<Engine>;
@@ -240,6 +245,77 @@ export class WorkflowBinding extends WorkerEntrypoint<Env> {
 		);
 	}
 
+	public async deleteBatch(options: {
+		instances: string[];
+	}): Promise<WorkflowBatchDeleteResult> {
+		const instanceIds = options?.instances;
+		if (!Array.isArray(instanceIds)) {
+			throw createWorkflowError("Provided argument is invalid", "body");
+		}
+		if (instanceIds.length > 100) {
+			throw createWorkflowError(
+				"batchDeleteInstances only supports 100 instances at a time",
+				"body"
+			);
+		}
+		if (instanceIds.length === 0) {
+			throw createWorkflowError(
+				"batchDeleteInstances should have at least 1 instance",
+				"body"
+			);
+		}
+		if (!instanceIds.every(isValidWorkflowInstanceId)) {
+			throw createWorkflowError(
+				"Instance ID is invalid",
+				"instance.invalid_id"
+			);
+		}
+
+		const uniqueIds = [...new Set(instanceIds)];
+		const deletions: Promise<void>[] = [];
+		for (const id of uniqueIds) {
+			const stub = this.env.ENGINE.get(this.env.ENGINE.idFromName(id));
+			deletions.push(stub.deleteInstance());
+		}
+
+		const settled = await Promise.allSettled(deletions);
+		const resultsById = new Map(
+			uniqueIds.map((id, index) => [id, settled[index]])
+		);
+		const result: WorkflowBatchDeleteResult = { deleted: [], errors: [] };
+		for (const id of instanceIds) {
+			const deletion = resultsById.get(id);
+			if (deletion === undefined) {
+				throw new Error("Missing batch deletion result");
+			}
+			if (
+				deletion.status === "fulfilled" ||
+				isUserTriggeredDelete(deletion.reason)
+			) {
+				result.deleted.push({ id });
+				continue;
+			}
+
+			const message =
+				deletion.reason instanceof Error
+					? deletion.reason.message
+					: String(deletion.reason);
+			const isNotFound = message.includes("(instance.not_found)");
+			result.errors.push({
+				id,
+				code: isNotFound ? 10400 : 10001,
+				message: isNotFound
+					? "workflows.api.error.instance.not_found"
+					: "workflows.api.error.internal_server",
+			});
+		}
+		return result;
+	}
+
+	public async unsafeGetInstanceStorageId(id: string): Promise<string> {
+		return this.env.ENGINE.idFromName(id).toString();
+	}
+
 	public async unsafeGetBindingName(): Promise<string> {
 		// async because of rpc
 		return this.env.BINDING_NAME;
@@ -372,6 +448,17 @@ export class WorkflowHandle extends RpcTarget implements WorkflowInstance {
 		} catch (e) {
 			// terminate causes instance abortion
 			if (!isUserTriggeredTerminate(e)) {
+				throw e;
+			}
+		}
+	}
+
+	public async delete(): Promise<void> {
+		try {
+			await this.stub.deleteInstance();
+		} catch (e) {
+			// delete aborts the instance
+			if (!isUserTriggeredDelete(e)) {
 				throw e;
 			}
 		}

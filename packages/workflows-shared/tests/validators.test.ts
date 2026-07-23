@@ -42,6 +42,9 @@ describe("Workflow instance ID validation", () => {
 		"\n\nhello",
 		"w".repeat(MAX_WORKFLOW_INSTANCE_ID_LENGTH + 1),
 		"#1231231!!!!",
+		"batch",
+		"terminate",
+		"terminateAll",
 	])("should reject invalid IDs", (value, { expect }) => {
 		expect(isValidWorkflowInstanceId(value as string)).toBe(false);
 	});

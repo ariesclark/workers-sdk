@@ -9,6 +9,7 @@ import {
 	PersistenceSchema,
 	ProxyNodeBinding,
 	SERVICE_DEV_REGISTRY_PROXY,
+	WORKER_BINDING_SERVICE_LOOPBACK,
 } from "../shared";
 import type { Service } from "../../runtime";
 import type { Plugin, RemoteProxyConnectionString } from "../shared";
@@ -68,6 +69,15 @@ export const WORKFLOWS_PLUGIN: Plugin<
 								entrypoint: "WorkflowBinding",
 							},
 						},
+						...(workflow.remoteProxyConnectionString === undefined
+							? [
+									WORKER_BINDING_SERVICE_LOOPBACK,
+									{
+										name: "MINIFLARE_WORKFLOW_NAME",
+										json: JSON.stringify(workflow.name),
+									},
+								]
+							: []),
 					],
 				},
 			})

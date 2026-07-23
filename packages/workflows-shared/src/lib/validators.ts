@@ -14,6 +14,7 @@ const ALLOWED_WORKFLOW_INSTANCE_ID_REGEX = new RegExp(
 	ALLOWED_STRING_ID_PATTERN
 );
 const ALLOWED_WORKFLOW_NAME_REGEX = ALLOWED_WORKFLOW_INSTANCE_ID_REGEX;
+const RESERVED_WORKFLOW_INSTANCE_IDS = ["batch", "terminate", "terminateAll"];
 
 // eslint-disable-next-line no-control-regex -- intentional use of control character range to detect invalid characters in workflow names
 const CONTROL_CHAR_REGEX = new RegExp("[\x00-\x1F]");
@@ -34,7 +35,10 @@ export function isValidWorkflowInstanceId(id: string): boolean {
 		return false;
 	}
 
-	if (id.length > MAX_WORKFLOW_INSTANCE_ID_LENGTH) {
+	if (
+		RESERVED_WORKFLOW_INSTANCE_IDS.includes(id) ||
+		id.length > MAX_WORKFLOW_INSTANCE_ID_LENGTH
+	) {
 		return false;
 	}
 
