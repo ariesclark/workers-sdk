@@ -1,5 +1,41 @@
 # create-cloudflare
 
+## 2.70.16
+
+### Patch Changes
+
+- [#14908](https://github.com/cloudflare/workers-sdk/pull/14908) [`301d6be`](https://github.com/cloudflare/workers-sdk/commit/301d6bed3ec1d4edcaac8f62ced89e5519fd298f) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency      | From    | To      |
+  | --------------- | ------- | ------- |
+  | create-next-app | 16.2.11 | 16.2.12 |
+
+- [#14909](https://github.com/cloudflare/workers-sdk/pull/14909) [`62dd693`](https://github.com/cloudflare/workers-sdk/commit/62dd693d2802817a077df091b834952e546de0ea) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency | From   | To     |
+  | ---------- | ------ | ------ |
+  | sv         | 0.16.5 | 0.16.6 |
+
+- [#14910](https://github.com/cloudflare/workers-sdk/pull/14910) [`6a03ffa`](https://github.com/cloudflare/workers-sdk/commit/6a03ffae1190d4be3532568b02b95830c694603e) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency  | From    | To      |
+  | ----------- | ------- | ------- |
+  | create-vike | 0.0.668 | 0.0.670 |
+
+- [#14911](https://github.com/cloudflare/workers-sdk/pull/14911) [`e09da32`](https://github.com/cloudflare/workers-sdk/commit/e09da32b58bc3f6808bce9696e80af0d5f8652b8) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency   | From  | To    |
+  | ------------ | ----- | ----- |
+  | create-astro | 5.2.2 | 5.2.3 |
+
 ## 2.70.15
 
 ### Patch Changes

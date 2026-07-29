@@ -1,5 +1,60 @@
 # wrangler
 
+## 4.116.0
+
+### Minor Changes
+
+- [#14907](https://github.com/cloudflare/workers-sdk/pull/14907) [`beec0fb`](https://github.com/cloudflare/workers-sdk/commit/beec0fbc9d3adec24bc42e31a21fe7f82badb543) Thanks [@NuroDev](https://github.com/NuroDev)! - Avoid Worker and workers.dev naming prompts in agent-driven deploys
+
+  Wrangler now derives the Worker name from the project and automatically registers the same project-derived workers.dev account subdomain on a first deploy when running in a detected agent environment. The deploy output explains how to change both names.
+
+- [#14685](https://github.com/cloudflare/workers-sdk/pull/14685) [`01d7020`](https://github.com/cloudflare/workers-sdk/commit/01d7020806dd523158cf9f26a4575365117f5381) Thanks [@edmundhung](https://github.com/edmundhung)! - Add support for dispatching email handlers with `createTestHarness`
+
+  You can now call `server.getWorker().email({ from, to, raw })` to dispatch directly to a Worker's `email()` handler and inspect its outcome, rejection reason, forwarded messages, and replies.
+
+  ```ts
+  const result = await server.getWorker().email({
+    from: "sender@example.com",
+    to: "inbox@example.com",
+    raw: [
+      "From: Sender <sender@example.com>",
+      "To: Inbox <inbox@example.com>",
+      "Message-ID: <test@example.com>",
+      "Subject: Test email",
+      "",
+      "Hello from the test harness",
+    ].join("\r\n"),
+  });
+
+  expect(result).toMatchObject({
+    outcome: "ok",
+    forwards: [{ recipient: "archive@example.com" }],
+    replies: [
+      {
+        sender: "inbox@example.com",
+        raw: expect.stringContaining("Thanks for your email"),
+      },
+    ],
+  });
+  ```
+
+### Patch Changes
+
+- [#14838](https://github.com/cloudflare/workers-sdk/pull/14838) [`8049ca4`](https://github.com/cloudflare/workers-sdk/commit/8049ca451c9561e8b72f3eeeb7916a8712f06133) Thanks [@TheSaiEaranti](https://github.com/TheSaiEaranti)! - Fix ctrl+c not being able to interrupt wrangler while waiting for Cloudflare Access authorization
+
+  When a domain is behind Cloudflare Access (for example during remote bindings startup), wrangler runs `cloudflared access login`, which only returns once the user completes the authorization flow in the browser. This was invoked synchronously, blocking Node's event loop, so wrangler could not react to ctrl+c (or anything else) until the authorization completed — abandoning the browser flow left a hung wrangler process that had to be killed externally. `cloudflared` is now spawned asynchronously, keeping wrangler responsive while it waits. The remote runtime passes its abort signal through to the spawn, so tearing down the session kills a still-pending `cloudflared` immediately, with process exit as a last-resort cleanup.
+
+- [#14871](https://github.com/cloudflare/workers-sdk/pull/14871) [`1394867`](https://github.com/cloudflare/workers-sdk/commit/1394867d1dc357d9bddabf8c16aede47d052fb18) Thanks [@nickpatt](https://github.com/nickpatt)! - Include the local observability query endpoint in the agent-facing Local Explorer hint
+
+  The hint `wrangler dev` prints for AI-agent sessions now lists `POST /cdn-cgi/explorer/api/local/observability/query`, so agents can discover the read-only SQL endpoint for captured request traces and console logs (the `spans` and `logs` tables) alongside the existing binding and storage routes.
+
+- [#14897](https://github.com/cloudflare/workers-sdk/pull/14897) [`e31ab0f`](https://github.com/cloudflare/workers-sdk/commit/e31ab0f40c5310babd8b493490c0e1ca677e9a8c) Thanks [@ericclemmons](https://github.com/ericclemmons)! - Fix `wrangler triggers deploy` to use Vite-generated redirected configuration
+
+  The command now reads `.wrangler/deploy/config.json`, matching `wrangler deploy` and `wrangler versions upload`, so generated Worker names and trigger settings are applied.
+
+- Updated dependencies [[`01d7020`](https://github.com/cloudflare/workers-sdk/commit/01d7020806dd523158cf9f26a4575365117f5381), [`d7f38c3`](https://github.com/cloudflare/workers-sdk/commit/d7f38c311e8cd0f29f56a25250da45f62b20f8ca), [`5c25cfe`](https://github.com/cloudflare/workers-sdk/commit/5c25cfe4e03e0d3d42ddab57adc3274d6f6a1a30)]:
+  - miniflare@4.20260722.2
+
 ## 4.115.0
 
 ### Minor Changes
